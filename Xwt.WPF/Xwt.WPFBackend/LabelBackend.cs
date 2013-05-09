@@ -33,6 +33,8 @@ using SWC = System.Windows.Controls;
 using SWM = System.Windows.Media;
 
 using Xwt.Backends;
+using System.Globalization;
+using System.Windows.Media;
 
 namespace Xwt.WPFBackend
 {
@@ -48,15 +50,63 @@ namespace Xwt.WPFBackend
 		}
 
 		public string Text {
-			get { return Label.TextBlock.Text; }
+			get {
+				if (Label.FormattedText != null)
+					return Label.FormattedText.Text;
+				return Label.TextBlock.Text;
+			}
 			set {
+				Label.FormattedText = null;
+				formattedTextUsedForUpdate = null;
+				Label.Content = Label.TextBlock;
 				Label.TextBlock.Text = value;
 				Widget.InvalidateMeasure();
 			}
 		}
 
+		private FormattedText formattedTextUsedForUpdate = null;
+
+		private void UpdateFormattedText()
+		{
+			if (formattedTextUsedForUpdate != null)
+				SetFormattedText(formattedTextUsedForUpdate);
+		}
+
 		public void SetFormattedText (FormattedText text)
 		{
+			formattedTextUsedForUpdate = text;
+			var wpfTextLayoutHandler = new WpfTextLayoutBackendHandler();
+			var wpfTextLayout = new TextLayoutBackend();
+			wpfTextLayoutHandler.SetText(wpfTextLayout, text.Text);
+			wpfTextLayout.FormattedText.SetFontSize(Label.FontSize);
+			wpfTextLayout.FormattedText.SetFontTypeface(new Typeface(Label.FontFamily, Label.FontStyle, Label.FontWeight, Label.FontStretch));
+			wpfTextLayout.FormattedText.SetForegroundBrush(Label.Foreground);
+			wpfTextLayout.FormattedText.TextAlignment = Label.TextBlock.TextAlignment;
+			wpfTextLayout.FormattedText.Trimming = Label.TextBlock.TextTrimming;
+			//Wraping is handled in OnRender...
+			//if (Label.TextBlock.TextWrapping != TextWrapping.NoWrap && Label.MaxWidth != double.PositiveInfinity)
+			//    wpfTextLayout.FormattedText.MaxTextWidth = Label.MaxWidth;
+			//else
+			//    wpfTextLayout.FormattedText.MaxTextWidth = 0;
+
+			foreach (var ha in text.Attributes)
+				wpfTextLayoutHandler.AddAttribute(wpfTextLayout, ha);
+			Label.FormattedText = wpfTextLayout.FormattedText;
+			Label.Content = null;
+			Widget.InvalidateMeasure();
+		}
+
+		public override object Font
+		{
+			get
+			{
+				return base.Font;
+			}
+			set
+			{
+				base.Font = value;
+				UpdateFormattedText();
+			}
 		}
 
 		public Xwt.Drawing.Color TextColor {
@@ -70,12 +120,16 @@ namespace Xwt.WPFBackend
 			}
 			set {
 				Label.Foreground = ResPool.GetSolidBrush (value);
+				UpdateFormattedText();
 			}
 		}
 
 		public Alignment TextAlignment {
-			get { return DataConverter.ToXwtAlignment (Label.HorizontalContentAlignment); }
-			set { Label.HorizontalContentAlignment = DataConverter.ToWpfAlignment (value); }
+			get { return DataConverter.ToXwtAlignment(Label.TextBlock.TextAlignment); }
+			set {
+				Label.TextBlock.TextAlignment = DataConverter.ToTextAlignment(value);
+				UpdateFormattedText();
+			}
 		}
 
 		public EllipsizeMode Ellipsize {
@@ -90,6 +144,7 @@ namespace Xwt.WPFBackend
 					Label.TextBlock.TextTrimming = TextTrimming.None;
 				else
 					Label.TextBlock.TextTrimming = TextTrimming.CharacterEllipsis;
+				UpdateFormattedText();
 			}
 		}
 
@@ -111,6 +166,8 @@ namespace Xwt.WPFBackend
 		{
 			if (Label.TextBlock.TextWrapping == TextWrapping.Wrap)
 				return new WidgetSize (0);
+			else if (Label.FormattedText != null)
+				return new WidgetSize(Label.FormattedText.Width);
 			else
 				return base.GetPreferredWidth ();
 		}
@@ -130,12 +187,30 @@ namespace Xwt.WPFBackend
 		protected override System.Windows.Size MeasureOverride (System.Windows.Size constraint)
 		{
 			var s = base.MeasureOverride (constraint);
+			if (FormattedText != null)
+				s.Height = Math.Max (FormattedText.Height, s.Height);
 			return Backend.MeasureOverride (constraint, s);
+		}
+
+		protected override void OnRender(SWM.DrawingContext drawingContext)
+		{
+			if (FormattedText != null)
+			{
+				if (TextBlock.TextWrapping != TextWrapping.NoWrap)
+					FormattedText.MaxTextWidth = RenderSize.Width;
+				drawingContext.DrawText(FormattedText, new System.Windows.Point(0, 0));
+			}
+			else
+			{
+				base.OnRender(drawingContext);
+			}
 		}
 
 		public SWC.TextBlock TextBlock {
 			get;
 			set;
 		}
+
+		public SWM.FormattedText FormattedText { get; set; }
 	}
 }
