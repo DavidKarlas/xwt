@@ -238,6 +238,9 @@ namespace Xwt.GtkBackend
 		public GtkImage (string stockId)
 		{
 			this.stockId = stockId;
+			var frame = new ImageFrame (ImageHandler.CreateBitmap (stockId, 0, 0, 1), 0, 0, false);
+			frame.Scale = 1;
+			AddFrame (frame);
 		}
 		
 		public GtkImage (IEnumerable<Gdk.Pixbuf> frames)
